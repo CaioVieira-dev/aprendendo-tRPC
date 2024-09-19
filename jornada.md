@@ -16,6 +16,8 @@ Normalmente eu trabalho numa maquina com ubuntu, mas minha maquina pessoal é wi
 DevContainers é uma extensão para o vscode que junto com o docker e o wsl2 me permite desenvolver numa maquina linux sem sair do meu windows :).
 Com o devcontainer eu consigo especificar exatamente o que eu preciso na maquina, e caso bugs estranhos aconteçam, eu posso pedir ajuda mais facilmente porque qualquer pessoa teria a mesma maquina para reproduzir o problema.
 
+---
+
 #### O 1º passo
 
 Iniciar o docker no windows e criar um devcontainer com pela extensão do vscode.
@@ -25,12 +27,112 @@ Eu poderia configurar mais algumas coisas nas features, mas preferi deixar no pa
 Depois de terminar a configuração, o vscode reabre no container de desenvolvimento, o docker começa a criar o container, e depois de alguns segundos/minutos, meu ambiente ubuntu está pronto para o desenvolvimento.
 Os ultimos retoques para começar a codar é re-habilitar as extensões relevantes no vscode, porque os containers de desenvolvimento não vem com todas as extensões do seu vscode habilitadas por padrão, então algumas extensões como prettier precisam ser habilitadas manualmente no container. (pra mim esse comportamento é até bem util, pois meu vscode padrão no windows geralmente tem extensões inuteis para alguns projetos de webdev)
 
+---
+
 ### 2. Tutoriais
 
 #### Não sei basicamente nada sobre tRPC
 
 É basicamente o que o subtitulo diz "não sei basicamente nada sobre tRPC". Sei que é uma lib que me ajuda a criar APIs com uma tipagem forte, mas meu conhecimento só vai até aí.
 No meu primeiro contato com a lib usando o `npm create t3-app@latest`, eu consegui me virar e usar app de exemplo para criar uma API comum, mas no momento em que tentei alguns conceitos mais avaçados como WebSockets, eu travei legal.
-Para aprender o que é necessario para esse tipo de API, decidi criar um app seguindo um [tutorial](https://preciselab.io/trpc/), espero que com um escopo menor seja mais facil de identificar o que fiz de errado no outro projeto.
+Para aprender o que é necessario para esse tipo de API, decidi criar um app seguindo um [tutorial](https://preciselab.io/trpc/) do Daniel Gustaw, espero que com um escopo menor seja mais facil de identificar o que fiz de errado no outro projeto.
+
+---
 
 #### O 2º passo
+
+Seguindo o tutorial do Daniel, primeiramente vou criar um projeto minimo com trpc, então instalei as dependencias do trpc e o zod:
+
+```bash
+npm i @trpc/server @trpc/client zod
+```
+
+Criei as pastas client e server:
+
+```txt
+- client
+- server
+```
+
+Na sequencia crio o arquivo `server/index.ts`:
+
+```TS
+import {initTRPC} from '@trpc/server';
+import {createHTTPServer} from '@trpc/server/adapters/standalone';
+import {z} from 'zod'
+
+export type AppRouter = typeof appRouter;
+
+const t = initTRPC.create();
+
+const publicProcedure = t.procedure;
+const router = t.router;
+
+const appRouter = router({
+    greet: publicProcedure
+        .input(z.string())
+        .query(({input}) => ({greeting: `hello, ${input}!`})),
+});
+
+createHTTPServer({
+    router: appRouter,
+}).listen(2022);
+```
+
+A linha `export type AppRouter = typeof appRouter;` exporta a tipagem da api, o schema, que o cliente vai usar, e o router define as funções que a api executa.
+Além do `query` o tRPC tem o `mutation` e o `subscription`, mas no exemplo minimo só preciso do query.
+Então crio o `client/index.ts`:
+
+```TS
+import { createTRPCProxyClient, httpBatchLink } from '@trpc/client';
+import type { AppRouter } from '../server';
+
+const client = createTRPCProxyClient<AppRouter>({
+  links: [
+    httpBatchLink({
+      url: 'http://localhost:2022',
+    }),
+  ],
+});
+
+async function main() {
+  const result = await client.greet.query('tRPC');
+
+  // Type safe
+  console.log(result.greeting.toUpperCase());
+}
+
+void main();
+```
+
+No client, o `AppRouter` foi importado como um tipo, então o `client` tem as funções, parametros e resultados tipados corretamente.
+
+---
+
+#### Extra
+
+Como estou usando typescript e não fiz uma configuração global, para rodar o server e o client, eu instalei o typescript como dependencia de desenvolvimento
+
+```bash
+npm i -D typescript ts-node
+```
+
+```bash
+npx tsc --init
+```
+
+E na sequencia abri dois terminais e rodei no primeiro:
+
+```bash
+npx ts-node ./server/index.ts
+```
+
+e no segundo:
+
+```bash
+npx ts-node ./client/index.ts
+```
+
+No final, vi no segundo o log `HELLO, TRPC!`
+
+---
