@@ -141,6 +141,9 @@ No final, vi no segundo o log `HELLO, TRPC!`
 
 O proximo passo é a autenticação. Criar uma função no servidor que só pode ser executada por um admin.
 Para simplificar, o tutorial usa um header com uma ""senha"" simples para simular um usuario autenticado.
+
+#### Criando a autenticação
+
 Criando o arquivo `server/context.ts`:
 
 ```TS
@@ -155,6 +158,8 @@ export async function createContext({req}: CreateNextContextOptions) {
 
 export type Context = inferAsyncReturnType<typeof createContext>;
 ```
+
+#### Implementando a autenticação
 
 Agora altero no `server/index.ts`, trocando
 
@@ -241,4 +246,40 @@ const unauthorizedError = await client.secret.query();
 console.log(unauthorizedError);
 const unauthorizedErrorMutation = await client.secretMutation.mutate();
 console.log(unauthorizedErrorMutation);
+```
+
+Para autorizar a chamada de função, eu adiciono o header no cliente
+
+```TS
+const client = createTRPCProxyClient<AppRouter>({
+  links: [
+    httpBatchLink({
+      url: 'http://localhost:2022',
+      headers: {
+        Authorization: 'ABC'
+      }
+    }),
+  ],
+});
+```
+
+Dessa maneira eu teria que recriar o client com novos headers toda vez que ele mudar. Uma maneira simples de melhorar isso é
+
+```TS
+const headers: Map<string, string> = new Map<string, string>();
+
+const client = createTRPCProxyClient<AppRouter>({
+  links: [
+    httpBatchLink({
+      url: 'http://localhost:2022',
+      headers: () => Object.fromEntries(headers)
+    }),
+  ],
+});
+```
+
+E durante a execução posso decidir o header com
+
+```TS
+headers.set('Authorization', 'ABC');
 ```
