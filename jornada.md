@@ -136,3 +136,109 @@ npx ts-node ./client/index.ts
 No final, vi no segundo o log `HELLO, TRPC!`
 
 ---
+
+#### O 3º passo
+
+O proximo passo é a autenticação. Criar uma função no servidor que só pode ser executada por um admin.
+Para simplificar, o tutorial usa um header com uma ""senha"" simples para simular um usuario autenticado.
+Criando o arquivo `server/context.ts`:
+
+```TS
+import {inferAsyncReturnType} from '@trpc/server';
+import {CreateNextContextOptions} from '@trpc/server/adapters/next';
+
+export async function createContext({req}: CreateNextContextOptions) {
+    return {
+        auth: req.headers.authorization === 'ABC'
+    };
+}
+
+export type Context = inferAsyncReturnType<typeof createContext>;
+```
+
+Agora altero no `server/index.ts`, trocando
+
+```TS
+const t = initTRPC.create();
+```
+
+para
+
+```TS
+import type { Context } from './context';
+export const t = initTRPC.context<Context>().create();
+```
+
+e trocando
+
+```TS
+createHTTPServer({
+    router: appRouter,
+}).listen(2022);
+```
+
+para
+
+```TS
+import {createContext} from "./context";
+
+createHTTPServer({
+    router: appRouter,
+    createContext
+}).listen(2022);
+```
+
+Agora posso adicionar no router a função
+
+```TS
+secret: publicProcedure.query(({ ctx }) => {
+  if (!ctx.auth) {
+    throw new TRPCError({ code: "UNAUTHORIZED" });
+  }
+  return {
+    secret: "sauce",
+  };
+}),
+```
+
+Isso até funciona, mas estou usando um procedimento publico, um jeito melhor seria usar o middleware `protectedProcedure`
+O ajuste no `server/index.ts` é adicionar
+
+```TS
+const isAuthed = t.middleware(({ next, ctx }) => {
+    if (!ctx.auth) {
+        throw new TRPCError({ code: 'UNAUTHORIZED' });
+    }
+    return next({
+        ctx: {
+            auth: ctx.auth
+        }
+    });
+});
+const protectedProcedure = t.procedure.use(isAuthed);
+```
+
+E o secret seria refatorado para isso
+
+```TS
+  secret: protectedProcedure.query(({ ctx }) => {
+    return {
+      secret: "sauce",
+    };
+  }),
+```
+
+Outra função para testar seria a
+
+```TS
+secretMutation: protectedProcedure.mutation(() => "access granted")
+```
+
+No `client/index.ts` podemos ver os erros
+
+```TS
+const unauthorizedError = await client.secret.query();
+console.log(unauthorizedError);
+const unauthorizedErrorMutation = await client.secretMutation.mutate();
+console.log(unauthorizedErrorMutation);
+```

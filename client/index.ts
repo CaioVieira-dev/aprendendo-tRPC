@@ -14,6 +14,11 @@ async function main() {
 
   // Type safe
   console.log(result.greeting.toUpperCase());
+
+  const unauthorizedError = await client.secret.query();
+  console.log(unauthorizedError);
+  const unauthorizedErrorMutation = await client.secretMutation.mutate();
+  console.log(unauthorizedErrorMutation);
 }
 
 void main();
