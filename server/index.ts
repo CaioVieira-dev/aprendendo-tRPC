@@ -13,7 +13,7 @@ export const t = initTRPC.context<Context>().create();
 const publicProcedure = t.procedure;
 const router = t.router;
 const isAuthed = t.middleware(({ next, ctx }) => {
-  if (!ctx.auth) {
+  if (!ctx.auth()) {
     throw new TRPCError({ code: "UNAUTHORIZED" });
   }
   return next({
@@ -38,7 +38,7 @@ const appRouter = router({
     return observable<{ date: Date; auth: boolean }>((emit) => {
       // logic that will execute on subscription start
       const interval = setInterval(
-        () => emit.next({ date: new Date(), auth: ctx.auth }),
+        () => emit.next({ date: new Date(), auth: ctx.auth() }),
         1000
       );
       // function to clean up and close interval after end of connection

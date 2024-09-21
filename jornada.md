@@ -541,6 +541,126 @@ async function main() {
 }
 ```
 
+Esse cenario até funciona, mas assume que estou autenticado desde o inicio. Um cenario real é iniciar não autenticado fazer uma requisição de autenticação http e depois iniciar a conexão do websocket
+
 ##### Cenario 2: Criar um mapa de ids de conexão e tokens de autenticação (tem algumas falhas, mas funciona)
+
+Aqui o tutorial começa a partir de um design.
+
+1. Setar `sec-websocket-key`(no caso `sec-websocket-id`) que vou usar para salvar e reusar no cliente
+2. Setar um mapa de keys de autenticação no client
+3. Permitir atualizar o mapa de keys com requisições http
+4. Ver na conexão de websocket que estou autenticado usando as keys
+
+###### Setar o header com um client id
+
+Quando o meu client começa(ex: meu usuario entra na pagina), eu gero um id. No `node` eu uso o `crypto`
+No client eu adiciono antes do `const wsClient = createWSClient({`
+
+```TS
+import crypto from 'crypto';
+const id = crypto.randomBytes(16).toString('hex')
+headers.set('sec-websocket-id', id);
+```
+
+(ps: em um ponto era possivel setar `sec-websocket-key`, mas isso não era algo desejavel e o pessoal responsavel pelo `ws` removel essa possibilidade)
+(ps2: nesse ponto eu substituí o header `headers.set("Authorization", "ABC");` pelo de id)
+
+###### Setar o mapa e conexões no server
+
+É um ponto crucial compartilhar `headers` para `http` e `websocket` links.
+No `createContext` do servidor eu posso ver os headers de todos os tipos de requisição(http e http com o upgrade request que vai abrir o websocket)
+No `context.ts` eu reescrevo assim:
+
+```TS
+import { inferAsyncReturnType } from "@trpc/server";
+import { CreateNextContextOptions } from "@trpc/server/adapters/next";
+
+const authState = new Map<string, boolean>();
+
+export async function createContext({ req }: CreateNextContextOptions) {
+  console.log(req.headers);
+  const auth = req.headers.authorization === "ABC";
+  const id = req.headers["sec-websocket-id"];
+
+  authState.set(id, auth);
+
+  return {
+    auth: () => authState.get(id) ?? false,
+    id,
+  };
+}
+
+export type Context = inferAsyncReturnType<typeof createContext>;
+```
+
+agora não estou checando o authState na requisição atual, mas o ultimo valor salvo no mapa.
+No meu cenario existem os eventos
+
+- query publica
+- setar o token
+- mutação privada <- aqui seto a autenticação como true
+- subscription no websocket <- aqui uso o state do mapa
+  Preciso ajustar em dois lugares. No `isAuthed` preciso chamar auth
+
+```TS
+const isAuthed = t.middleware(({ next, ctx }) => {
+  if (!ctx.auth()) {
+    throw new TRPCError({ code: "UNAUTHORIZED" });
+  }
+  return next({
+    ctx: {
+      auth: ctx.auth,
+    },
+  });
+});
+```
+
+e no `time`, preciso ajustar `ctx.auth` para `ctx.auth()`
+
+```TS
+const interval = setInterval(() => emit.next({date: new Date(), auth: ctx.auth()}), 1000);
+```
+
+###### Checar no client se funcionou
+
+no `main` do client agora tenho
+
+```TS
+async function main() {
+  client.time.subscribe(undefined, {
+    onData: (time) => {
+      console.log(time);
+    },
+  });
+  const result = await client.greet.query("tRPC");
+
+  // Type safe
+  console.log(result.greeting.toUpperCase());
+
+  // const unauthorizedError = await client.secret.query();
+  // console.log(unauthorizedError);
+  // const unauthorizedErrorMutation = await client.secretMutation.mutate();
+  // console.log(unauthorizedErrorMutation);
+
+  // const authorized = await client.secret.query();
+  // console.log(authorized);
+  // const authorizedMutation = await client.secretMutation.mutate();
+  // console.log(authorizedMutation);
+
+  setTimeout(async () => {
+    headers.set("Authorization", "ABC");
+
+    const secret = await client.secretMutation.mutate();
+    console.log(secret);
+  }, 2000);
+
+  client.time.subscribe(undefined, {
+    onData: ({ auth, date }) => {
+      console.log(`I am ${auth ? "auth" : "not auth"} at ${date}`);
+    },
+  });
+}
+```
 
 ##### Cenario 3: Passar o token no payload de todos os subscription (meio feio mas escala bem)

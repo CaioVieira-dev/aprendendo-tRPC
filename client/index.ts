@@ -7,9 +7,11 @@ import {
   wsLink,
 } from "@trpc/client";
 import type { AppRouter } from "../server";
+import crypto from "crypto";
+const id = crypto.randomBytes(16).toString("hex");
 
 const headers: Map<string, string> = new Map<string, string>();
-headers.set("Authorization", "ABC");
+headers.set("sec-websocket-id", id);
 
 const WebSocketProxy = new Proxy(WebSocket, {
   construct(target, args) {
@@ -59,10 +61,17 @@ async function main() {
   // const unauthorizedErrorMutation = await client.secretMutation.mutate();
   // console.log(unauthorizedErrorMutation);
 
-  const authorized = await client.secret.query();
-  console.log(authorized);
-  const authorizedMutation = await client.secretMutation.mutate();
-  console.log(authorizedMutation);
+  // const authorized = await client.secret.query();
+  // console.log(authorized);
+  // const authorizedMutation = await client.secretMutation.mutate();
+  // console.log(authorizedMutation);
+
+  setTimeout(async () => {
+    headers.set("Authorization", "ABC");
+
+    const secret = await client.secretMutation.mutate();
+    console.log(secret);
+  }, 2000);
 
   client.time.subscribe(undefined, {
     onData: ({ auth, date }) => {
