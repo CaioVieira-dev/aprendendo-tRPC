@@ -109,7 +109,7 @@ No client, o `AppRouter` foi importado como um tipo, então o `client` tem as fu
 
 ---
 
-#### Extra
+##### Extra
 
 Como estou usando typescript e não fiz uma configuração global, para rodar o server e o client, eu instalei o typescript como dependencia de desenvolvimento
 
@@ -142,7 +142,7 @@ No final, vi no segundo o log `HELLO, TRPC!`
 O proximo passo é a autenticação. Criar uma função no servidor que só pode ser executada por um admin.
 Para simplificar, o tutorial usa um header com uma ""senha"" simples para simular um usuario autenticado.
 
-#### Criando a autenticação
+##### Criando a autenticação
 
 Criando o arquivo `server/context.ts`:
 
@@ -159,7 +159,7 @@ export async function createContext({req}: CreateNextContextOptions) {
 export type Context = inferAsyncReturnType<typeof createContext>;
 ```
 
-#### Implementando a autenticação
+##### Implementando a autenticação
 
 Agora altero no `server/index.ts`, trocando
 
@@ -282,4 +282,67 @@ E durante a execução posso decidir o header com
 
 ```TS
 headers.set('Authorization', 'ABC');
+```
+
+#### O 4º passo
+
+WebSockets. O proximo passo é a integração do tRPC com websockets.
+Primeiro instalo as libs ws e @types/ws
+
+```bash
+npm i ws
+npm i -D @types/ws
+```
+
+Depois crio a função no `router`
+
+```TS
+time: publicProcedure.subscription(() => {
+        return observable<Date>((emit) => {
+            // logic that will execute on subscription start
+            const interval = setInterval(() => emit.next(new Date()), 1000);
+            // function to clean up and close interval after end of connection
+            return () => {
+                clearInterval(interval);
+            }
+        })
+    })
+```
+
+E depois crio o servidor do websocket
+
+```TS
+import ws from "ws";
+import { applyWSSHandler } from '@trpc/server/adapters/ws';
+
+const wss = new ws.Server({
+    port: 3001,
+});
+const handler = applyWSSHandler({ wss, router: appRouter, createContext });
+wss.on('connection', (ws) => {
+    console.log(`➕➕ Connection (${wss.clients.size})`);
+    ws.once('close', () => {
+        console.log(`➖➖ Connection (${wss.clients.size})`);
+    });
+});
+console.log('✅ WebSocket Server listening on ws://localhost:3001');
+process.on('SIGTERM', () => {
+    console.log('SIGTERM');
+    handler.broadcastReconnectNotification();
+    wss.close();
+});
+```
+
+Para checar o resultado, eu uso um payload com este formato num cliente de http como o insomnia.
+
+```TS
+{
+  id: number | string;
+  jsonrpc?: '2.0';
+  method: 'subscription';
+  params: {
+    path: string;
+    input?: unknown; // <-- pass input of procedure, serialized by transformer
+  };
+}
 ```
