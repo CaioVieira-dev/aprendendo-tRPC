@@ -34,10 +34,13 @@ const appRouter = router({
     };
   }),
   secretMutation: protectedProcedure.mutation(() => "access granted"),
-  time: publicProcedure.subscription(() => {
-    return observable<Date>((emit) => {
+  time: publicProcedure.subscription(({ ctx }) => {
+    return observable<{ date: Date; auth: boolean }>((emit) => {
       // logic that will execute on subscription start
-      const interval = setInterval(() => emit.next(new Date()), 1000);
+      const interval = setInterval(
+        () => emit.next({ date: new Date(), auth: ctx.auth }),
+        1000
+      );
       // function to clean up and close interval after end of connection
       return () => {
         clearInterval(interval);

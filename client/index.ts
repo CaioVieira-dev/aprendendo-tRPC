@@ -9,10 +9,23 @@ import {
 import type { AppRouter } from "../server";
 
 const headers: Map<string, string> = new Map<string, string>();
+headers.set("Authorization", "ABC");
 
+const WebSocketProxy = new Proxy(WebSocket, {
+  construct(target, args) {
+    return new target(args[0], undefined, {
+      headers: Object.fromEntries(headers),
+    });
+  },
+});
+
+// const wsClient = createWSClient({
+//   url: `ws://localhost:3001`,
+//   WebSocket: WebSocket,
+// });
 const wsClient = createWSClient({
   url: `ws://localhost:3001`,
-  WebSocket: WebSocket,
+  WebSocket: WebSocketProxy,
 });
 
 const client = createTRPCProxyClient<AppRouter>({
@@ -46,11 +59,16 @@ async function main() {
   // const unauthorizedErrorMutation = await client.secretMutation.mutate();
   // console.log(unauthorizedErrorMutation);
 
-  headers.set("Authorization", "ABC");
   const authorized = await client.secret.query();
   console.log(authorized);
   const authorizedMutation = await client.secretMutation.mutate();
   console.log(authorizedMutation);
+
+  client.time.subscribe(undefined, {
+    onData: ({ auth, date }) => {
+      console.log(`I am ${auth ? "auth" : "not auth"} at ${date}`);
+    },
+  });
 }
 
 void main();

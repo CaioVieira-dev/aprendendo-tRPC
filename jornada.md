@@ -366,8 +366,8 @@ Agora crio o `wsClient`
 ```TS
 const WebSocket = require('ws');
 const wsClient = createWSClient({
-    url: `ws://localhost:3001`,
-    WebSocket: WebSocket,
+  url: `ws://localhost:3001`,
+  WebSocket: WebSocket,
 });
 ```
 
@@ -375,22 +375,22 @@ E uso ele no link
 
 ```TS
 const client = createTRPCProxyClient<AppRouter>({
-    links: [
-        wsLink({
-            client: wsClient
-        }),
-    ],
+  links: [
+    wsLink({
+      client: wsClient
+    }),
+  ],
 });
 ```
 
 e por fim me inscrevo no websocket
 
 ```TS
-   client.time.subscribe(undefined, {
-        onData: (time) => {
-            console.log(time)
-        }
-    })
+client.time.subscribe(undefined, {
+  onData: (time) => {
+    console.log(time)
+  }
+ })
 ```
 
 Por enquanto para funcionar eu preciso comentar a parte de autenticação no client.
@@ -417,3 +417,130 @@ const client = createTRPCProxyClient<AppRouter>({
   ],
 });
 ```
+
+##### Cenario 1: Passar os headers de autenticação numa requisição de handshake (facil, mas não muito pratico)
+
+Esse cenario é facil de implementar, mas não é muito pratico.
+Seguindo o tutorial, vou usar isso só como prova de conceito.
+
+Primeiro crio um proxy que vai adicionar os cabeçalhos
+
+```TS
+const WebSocket = require('ws');
+
+const WebSocketProxy = new Proxy(WebSocket, {
+  construct(target, args) {
+    return new target(args[0], undefined, {
+      headers: Object.fromEntries(headers),
+    });
+  },
+});
+```
+
+Headers, é o objeto que vai ter os cabeçalhos de autenticação.
+
+```TS
+const headers: Map<string, string> = new Map<string, string>();
+```
+
+No target, `args[0]` é a url.
+`undefined` é o protocolo(pulo isso porque não preciso agora).
+E o terceiro parametro vai ter os headers, que seto antes de chamar o `createWSClient` com
+
+```TS
+headers.set('Authorization', 'ABC');
+```
+
+Agora, posso usar o `WebSocketProxy` no lugar do `Websocket`
+
+```TS
+const wsClient = createWSClient({
+  url: `ws://localhost:3001`,
+  WebSocket: WebSocketProxy,
+});
+```
+
+E o client pode ter só o wsLink
+
+```TS
+const client = createTRPCProxyClient<AppRouter>({
+  links: [
+    wsLink({
+      client: wsClient,
+    }),
+  ],
+});
+```
+
+ou ser dividido entre http e websocket
+
+```TS
+const client = createTRPCProxyClient<AppRouter>({
+  links: [
+    splitLink({
+      condition: (op) => op.type === "subscription",
+      true: wsLink({
+        client: wsClient,
+      }),
+      false: httpBatchLink({
+        url: "http://localhost:2022",
+        headers: () => Object.fromEntries(headers),
+      }),
+    }),
+  ],
+});
+```
+
+No server não preciso de muita alteração, só uma pequena melhoria é retornar o o `auth` no `time`
+
+```TS
+  time: publicProcedure.subscription(({ ctx }) => {
+    return observable<{ date: Date; auth: boolean }>((emit) => {
+      // logic that will execute on subscription start
+      const interval = setInterval(
+        () => emit.next({ date: new Date(), auth: ctx.auth }),
+        1000
+      );
+      // function to clean up and close interval after end of connection
+      return () => {
+        clearInterval(interval);
+      };
+    });
+  }),
+```
+
+E o `main` do client vai ficar assim
+
+```TS
+async function main() {
+  client.time.subscribe(undefined, {
+    onData: (time) => {
+      console.log(time);
+    },
+  });
+  const result = await client.greet.query("tRPC");
+
+  // Type safe
+  console.log(result.greeting.toUpperCase());
+
+  // const unauthorizedError = await client.secret.query();
+  // console.log(unauthorizedError);
+  // const unauthorizedErrorMutation = await client.secretMutation.mutate();
+  // console.log(unauthorizedErrorMutation);
+
+  const authorized = await client.secret.query();
+  console.log(authorized);
+  const authorizedMutation = await client.secretMutation.mutate();
+  console.log(authorizedMutation);
+
+  client.time.subscribe(undefined, {
+    onData: ({ auth, date }) => {
+      console.log(`I am ${auth ? "auth" : "not auth"} at ${date}`);
+    },
+  });
+}
+```
+
+##### Cenario 2: Criar um mapa de ids de conexão e tokens de autenticação (tem algumas falhas, mas funciona)
+
+##### Cenario 3: Passar o token no payload de todos os subscription (meio feio mas escala bem)
