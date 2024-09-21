@@ -346,3 +346,74 @@ Para checar o resultado, eu uso um payload com este formato num cliente de http 
   };
 }
 ```
+
+##### Conectando no client
+
+###### Atenção:
+
+`createWSClient` assume que está operando no browser, no node client ele pode mostrar um erro de
+
+```TS
+ReferenceError: WebSocket is not defined
+```
+
+Para resolver esse erro instalo o ws e os tipos dele no escopo global
+
+##### continuando
+
+Agora crio o `wsClient`
+
+```TS
+const WebSocket = require('ws');
+const wsClient = createWSClient({
+    url: `ws://localhost:3001`,
+    WebSocket: WebSocket,
+});
+```
+
+E uso ele no link
+
+```TS
+const client = createTRPCProxyClient<AppRouter>({
+    links: [
+        wsLink({
+            client: wsClient
+        }),
+    ],
+});
+```
+
+e por fim me inscrevo no websocket
+
+```TS
+   client.time.subscribe(undefined, {
+        onData: (time) => {
+            console.log(time)
+        }
+    })
+```
+
+Por enquanto para funcionar eu preciso comentar a parte de autenticação no client.
+
+#### O 5º passo
+
+Usar http e websockets no mesmo router.
+Websockets não suportam cabeçalhos http, com isso fica dificil autenticar. Mas podemos ter uma requisição http que sofre um upgrade para websocket([detalhes](https://www.rfc-editor.org/rfc/rfc6455?ref=preciselab.io)).
+Para separar as partes em websocket das em http uso o `splitLink`
+
+```TS
+const client = createTRPCProxyClient<AppRouter>({
+  links: [
+    splitLink({
+      condition: (op) => op.type === "subscription",
+      true: wsLink({
+        client: wsClient,
+      }),
+      false: httpBatchLink({
+        url: "http://localhost:2022",
+        headers: () => Object.fromEntries(headers),
+      }),
+    }),
+  ],
+});
+```
