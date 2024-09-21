@@ -46,11 +46,11 @@ const client = createTRPCProxyClient<AppRouter>({
 });
 
 async function main() {
-  client.time.subscribe(undefined, {
-    onData: (time) => {
-      console.log(time);
-    },
-  });
+  // client.time.subscribe(undefined, {
+  //   onData: (time) => {
+  //     console.log(time);
+  //   },
+  // });
   const result = await client.greet.query("tRPC");
 
   // Type safe
@@ -73,11 +73,21 @@ async function main() {
     console.log(secret);
   }, 2000);
 
-  client.time.subscribe(undefined, {
-    onData: ({ auth, date }) => {
-      console.log(`I am ${auth ? "auth" : "not auth"} at ${date}`);
-    },
-  });
+  // client.time.subscribe(undefined, {
+  //   onData: ({ auth, date }) => {
+  //     console.log(`I am ${auth ? "auth" : "not auth"} at ${date}`);
+  //   },
+  // });
+  client.time.subscribe(
+    { token: "ABC" },
+    {
+      onData: (ctx) => {
+        console.log(
+          `I am ${ctx.input_auth ? "auth" : "not auth"} at ${ctx.date}`
+        );
+      },
+    }
+  );
 }
 
 void main();

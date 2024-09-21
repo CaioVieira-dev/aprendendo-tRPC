@@ -34,19 +34,32 @@ const appRouter = router({
     };
   }),
   secretMutation: protectedProcedure.mutation(() => "access granted"),
-  time: publicProcedure.subscription(({ ctx }) => {
-    return observable<{ date: Date; auth: boolean }>((emit) => {
-      // logic that will execute on subscription start
-      const interval = setInterval(
-        () => emit.next({ date: new Date(), auth: ctx.auth() }),
-        1000
+  time: publicProcedure
+    .input(
+      z.object({
+        token: z.string(),
+      })
+    )
+    .subscription(({ ctx, input }) => {
+      return observable<{ date: Date; ctx_auth: boolean; input_auth: boolean }>(
+        (emit) => {
+          // logic that will execute on subscription start
+          const interval = setInterval(
+            () =>
+              emit.next({
+                date: new Date(),
+                ctx_auth: ctx.auth(),
+                input_auth: input.token === "ABC",
+              }),
+            1000
+          );
+          // function to clean up and close interval after end of connection
+          return () => {
+            clearInterval(interval);
+          };
+        }
       );
-      // function to clean up and close interval after end of connection
-      return () => {
-        clearInterval(interval);
-      };
-    });
-  }),
+    }),
 });
 
 createHTTPServer({

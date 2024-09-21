@@ -513,11 +513,11 @@ E o `main` do client vai ficar assim
 
 ```TS
 async function main() {
-  client.time.subscribe(undefined, {
-    onData: (time) => {
-      console.log(time);
-    },
-  });
+  // client.time.subscribe(undefined, {
+  //   onData: (time) => {
+  //     console.log(time);
+  //   },
+  // });
   const result = await client.greet.query("tRPC");
 
   // Type safe
@@ -628,11 +628,11 @@ no `main` do client agora tenho
 
 ```TS
 async function main() {
-  client.time.subscribe(undefined, {
-    onData: (time) => {
-      console.log(time);
-    },
-  });
+  // client.time.subscribe(undefined, {
+  //   onData: (time) => {
+  //     console.log(time);
+  //   },
+  // });
   const result = await client.greet.query("tRPC");
 
   // Type safe
@@ -664,3 +664,99 @@ async function main() {
 ```
 
 ##### Cenario 3: Passar o token no payload de todos os subscription (meio feio mas escala bem)
+
+Passar o token no payload da subscription ao invez da requisição de "handshake"
+O ajuste no `time`
+
+```TS
+ time: publicProcedure
+    .input(
+      z.object({
+        token: z.string(),
+      })
+    )
+    .subscription(({ ctx, input }) => {
+      return observable<{ date: Date; ctx_auth: boolean; input_auth: boolean }>(
+        (emit) => {
+          // logic that will execute on subscription start
+          const interval = setInterval(
+            () =>
+              emit.next({
+                date: new Date(),
+                ctx_auth: ctx.auth(),
+                input_auth: input.token === "ABC",
+              }),
+            1000
+          );
+          // function to clean up and close interval after end of connection
+          return () => {
+            clearInterval(interval);
+          };
+        }
+      );
+    }),
+```
+
+e no client
+
+```TS
+  client.time.subscribe(
+    { token: "ABC" },
+    {
+      onData: (ctx) => {
+        console.log(
+          `I am ${ctx.input_auth ? "auth" : "not auth"} at ${ctx.date}`
+        );
+      },
+    }
+  );
+```
+
+No final o `main` ficou assim
+
+```TS
+async function main() {
+  // client.time.subscribe(undefined, {
+  //   onData: (time) => {
+  //     console.log(time);
+  //   },
+  // });
+  const result = await client.greet.query("tRPC");
+
+  // Type safe
+  console.log(result.greeting.toUpperCase());
+
+  // const unauthorizedError = await client.secret.query();
+  // console.log(unauthorizedError);
+  // const unauthorizedErrorMutation = await client.secretMutation.mutate();
+  // console.log(unauthorizedErrorMutation);
+
+  // const authorized = await client.secret.query();
+  // console.log(authorized);
+  // const authorizedMutation = await client.secretMutation.mutate();
+  // console.log(authorizedMutation);
+
+  setTimeout(async () => {
+    headers.set("Authorization", "ABC");
+
+    const secret = await client.secretMutation.mutate();
+    console.log(secret);
+  }, 2000);
+
+  // client.time.subscribe(undefined, {
+  //   onData: ({ auth, date }) => {
+  //     console.log(`I am ${auth ? "auth" : "not auth"} at ${date}`);
+  //   },
+  // });
+  client.time.subscribe(
+    { token: "ABC" },
+    {
+      onData: (ctx) => {
+        console.log(
+          `I am ${ctx.input_auth ? "auth" : "not auth"} at ${ctx.date}`
+        );
+      },
+    }
+  );
+}
+```
